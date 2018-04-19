@@ -1,7 +1,7 @@
 # sklearn-investing
 identify stocks that should outperform S&amp;P 500
 
-used python3, sklearn, pandas, quandl
+used python3, sklearn, pandas, quandl, fix_yahoo_finance
 
 Before running project extract intraQuarter.zip to the same folder. It contains key statistics of stocks from 2000 till 2013
 
@@ -61,3 +61,7 @@ KNeighborsClassifier trained with X_train (historical key stats) and y_train (la
 And tested with X_test and y_test.
 
 Next, for each ticker fresh key statistics is taken and parsed and with this X trained model is used. If specific ticker is predicted to outperform - it's printed
+
+
+Second version of my code tests all stocks (with MarketCap > 900M) available on NYSE and Nasdaq. 
+Also bugs are fixed and search with regular expressions is improved. Added using BARCHART service and fix_yahoo_finance package.
