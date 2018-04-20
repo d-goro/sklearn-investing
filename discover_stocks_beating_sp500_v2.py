@@ -119,6 +119,64 @@ FEATURES_CURRENT=["Total Debt/Equity",
                   'Short % of Float',
                   'Shares Short (prior ']
 
+def Convert_To_Val (value):
+    value = value.replace('$', '')
+    if "B" in value:
+        return float(value.replace("B", ''))*1000000000
+    elif "M" in value:
+        return float(value.replace("M", ''))*1000000
+    elif "K" in value:
+        return float(value.replace("K", ''))*1000
+    
+
+def Extract_Initial_Stock_List(force_query = False):    
+    if not force_query and os.path.exists('Initial_Tickers_550.csv'):
+        df = pd.read_csv('Initial_Tickers_550.csv', index_col=0)
+        return df
+    
+    statspath = intraQuarterPath + "/_KeyStats"
+    stock_list = [x[0] for x in os.walk(statspath)]
+ 
+    tickers = []
+    for each_dir in stock_list[1:]:        
+            each_file = os.listdir(each_dir)
+            
+            if len(each_file) > 0:            
+                ticker = each_dir.split("/")[2].upper()            
+                tickers.append(ticker)
+    
+    df = pd.DataFrame(columns = ['Symbol'], data = tickers)
+    df.to_csv("Initial_Tickers_550.csv")
+    return df
+    
+def Extract_NYSE_NASDAQ_Tickers(market_cap_filter, force_query = False):
+    if not force_query and os.path.exists('Tickers.csv'):
+        df = pd.read_csv('Tickers.csv', index_col=0)
+        return df
+    
+    df1 = pd.read_csv('companylist_nyse.csv')[['Symbol', 'MarketCap']]
+    df1 = df1[df1.MarketCap.notnull()]
+    df1['MarketCap'] = df1['MarketCap'].apply(lambda x: Convert_To_Val(x))
+    
+    
+    df2 = pd.read_csv('companylist_nasdaq.csv')[['Symbol', 'MarketCap']]
+    df2 = df2[df2.MarketCap.notnull()]
+    df2['MarketCap'] = df2['MarketCap'].apply(lambda x: Convert_To_Val(x))
+    
+    df_c = pd.concat([df1, df2], ignore_index=True, verify_integrity=True)
+    df_c = df_c[df_c.MarketCap >= market_cap_filter]
+
+
+    tickers = Extract_Initial_Stock_List(force_query)
+    new_df = tickers.join(df_c.set_index('Symbol'), how='outer', on='Symbol')[['Symbol']]
+    
+    new_df = new_df.reset_index()[['Symbol']]
+
+    new_df.to_csv("Tickers.csv")
+    
+    return new_df
+
+
 def Request_Link(link):
     headers={'User-agent' : 'Mozilla/5.0'}
     req = urllib.request.Request(link, None, headers)
@@ -216,6 +274,7 @@ def Pull_Stock_Prices(stock_list, start_date, end_date, force_query = False):
     
     if not force_query and os.path.exists('stock_prices.csv'):
         df = pd.read_csv('stock_prices.csv', index_col=0)
+        stocks_to_remove = [x for x in stocks if x not in df.columns]
         return df, stocks_to_remove
     
     print(start_date, end_date)
@@ -340,15 +399,9 @@ def Parse_Key_Stats(NA_threshold, sp500_df, stock_df, time_period, force_query =
                                 else:
                                     value = (value.group(1))
                                     if value[0] == '>':
-                                        value = value[1:]
+                                        value = value[1:]                                    
+                                    value = Convert_To_Val(value)
                                     
-                                    if "B" in value:
-                                        value = float(value.replace("B", ''))*1000000000
-                                    elif "M" in value:
-                                        value = float(value.replace("M", ''))*1000000
-                                    elif "K" in value:
-                                        value = float(value.replace("K", ''))*1000
-                                
                             value_list.append(value)
                             
                         except:
@@ -423,7 +476,7 @@ def Parse_Key_Stats(NA_threshold, sp500_df, stock_df, time_period, force_query =
 def Parse_Today_Key_Stats(stock_list, NA_threshold, force_query = False):
     if not force_query and os.path.exists('forward_sample.csv'):
         df = pd.read_csv('forward_sample.csv', index_col=0)
-        return df
+        return df[df.Ticker.isin(stock_list)]
         
     df = pd.DataFrame(columns = DFColumns)
             
@@ -450,12 +503,7 @@ def Parse_Today_Key_Stats(stock_list, NA_threshold, force_query = False):
                             value = np.nan
                         else:
                             value = (value.group(1))
-                            if "B" in value:
-                                value = float(value.replace("B", ''))*1000000000
-                            elif "M" in value:
-                                value = float(value.replace("M", ''))*1000000
-                            elif "K" in value:
-                                value = float(value.replace("K", ''))*1000
+                            value = Convert_To_Val(value)
                     
                     
                     value_list.append(value)
@@ -642,16 +690,18 @@ def Analysis(model, tickers, X_list):
     return invest_list
     
 
-NA_threshold = 2
+NA_threshold = 3
 outperform_threshold = 15
 test_size = 2
+market_cap = Convert_To_Val('5B')
 
 #time_period_perf_calc =  31536000 #year
 time_period_perf_calc = 7884000 #decide abour performance each quarter
 #time_period_perf_calc = 15768000 #half year
 
 print(5*"_", 'Pulling stocks', 5*"_")
-stocks = pd.read_csv("Tickers.csv")['Symbol'].values.tolist()
+#stocks = pd.read_csv("Tickers.csv")['Symbol'].values.tolist()
+stocks = Extract_NYSE_NASDAQ_Tickers(market_cap, True)['Symbol'].values.tolist()
 print('There is {0} stocks'.format(len(stocks)))
 
 print(5*"_", 'Pulling stock prices', 5*"_")
@@ -666,12 +716,12 @@ sp500_df = pd.read_csv("GSPC.csv", index_col=0)
 
 print(5*"_", 'Parsing key stats and comparing stocks prices to S&P 500 prices', 5*"_")
 #key_stats_df = Load_Key_Stats()
-key_stats_df = Parse_Key_Stats(NA_threshold, sp500_df, stock_df, time_period_perf_calc, True)
+key_stats_df = Parse_Key_Stats(NA_threshold, sp500_df, stock_df, time_period_perf_calc, False)
 
 Update_Key_Stats_Outperform_Status(key_stats_df, outperform_threshold)
 
 print(5*"_", "Pulling and Parsing today's key statistics", 5*"_")
-forward_df = Parse_Today_Key_Stats(stocks, NA_threshold, True)
+forward_df = Parse_Today_Key_Stats(stocks, NA_threshold, False)
 print('We have', len(forward_df), 'stocks with', NA_threshold, 'N/A threshold to analyze')
 
 print(5*"_", 'Performing analysis of key statistics data set', 5*"_")
